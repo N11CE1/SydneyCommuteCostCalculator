@@ -47,12 +47,17 @@ def completes_ticket(pr, key):
     markers = []
     fence = None
     for line in (pr.get("body") or "").splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith(("```", "~~~")):
-            delimiter = stripped[0]
+        match = re.fullmatch(r" {0,3}(`{3,}|~{3,})(.*)", line)
+        if match:
+            delimiter, suffix = match.groups()
             if fence is None:
-                fence = delimiter
-            elif fence == delimiter:
+                if delimiter[0] != "`" or "`" not in suffix:
+                    fence = (delimiter[0], len(delimiter))
+            elif (
+                delimiter[0] == fence[0]
+                and len(delimiter) >= fence[1]
+                and not suffix.strip(" \t")
+            ):
                 fence = None
             continue
         if fence is None and line.startswith("Completes-Jira:"):
