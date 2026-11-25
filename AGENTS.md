@@ -44,12 +44,13 @@ Read `DesignDoc.md` before implementation. Start with the map-first, personal-us
 
 Authenticated GitHub CLI and Atlassian MCP allow editor-driven ticket creation, linking, comments, and workflow transitions. They do **not** by themselves configure automatic event synchronization.
 
-Server-side automation is not configured or verified by this agreement. For unattended updates:
+GitHub Actions PR-event synchronization is deployed on `main`; see `docs/jira-automation.md` for security, setup, and validation evidence. Read authentication is verified; dedicated live lifecycle validation is tracked in KAN-10. A green run that reports `skipped` is not proof of a status write.
 
-- Connect this repository through GitHub for Atlassian and verify Jira recognizes a test branch/PR using its issue key.
-- Configure Jira automation for the agreed events: ready-for-review PR → In Review; PR merged into `main` → Done only when the ticket's full scope is delivered.
+- Use the exact `KAN-N:` title prefix. Draft PRs map to In Progress; ready PRs map to In Review.
+- Completion requires a verified merge into `main`, the full ticket scope delivered, and a matching standalone `Completes-Jira: KAN-N` line in the PR body.
 - Exclude drafts and closed-unmerged PRs from completion. Handle tickets with multiple PRs explicitly rather than closing on the first merge.
-- Test the rule on one issue and check its audit log before relying on it.
+- Record actual workflow runs and Jira status/comments before claiming a lifecycle path is verified.
+- GitHub for Atlassian development-panel linking is optional and remains unverified; it is separate from this REST-based synchronization.
 - `Closes #123` is GitHub issue syntax; it does not close a Jira ticket.
 
 ## Main branch protection
@@ -59,3 +60,12 @@ Verified on 2026-11-25: GitHub protection for `main` requires a pull request, ap
 This is a solo-maintainer repository: no additional approving review is required, and no CI status checks are required yet. These settings allow the owner to merge their own PR without permitting direct implementation pushes. Add required checks when CI exists; reconsider approval requirements if collaborators join.
 
 Do not weaken or bypass protection to deliver work. Changes to protection require explicit user authorization. Branch protection does not configure Jira synchronization.
+
+## Branch cleanup and Copilot review
+
+Configured and read back on 2026-11-25:
+
+- Automatically delete eligible PR head branches after merge. This does not delete local branches or override protection for `main`.
+- An active, additive ruleset requests Copilot review for PRs targeting the default branch, including drafts on creation. Reviews on every new push are disabled to avoid unnecessary usage.
+- Copilot reviews depend on account entitlement and available allowance; this setting does not enable paid overages or make AI approval a merge requirement.
+- Preserve the existing `main` protection independently of this Copilot-only ruleset.

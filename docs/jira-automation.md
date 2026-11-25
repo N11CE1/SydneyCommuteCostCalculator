@@ -4,7 +4,9 @@ Tracking: [KAN-9](https://tomhickman.atlassian.net/browse/KAN-9).
 
 ## Deployment status
 
-This document describes the implementation, not proof of a live connection. The sync workflow must be merged into the default branch (`main`) before normal PR-event handling or manual validation can be relied on. Do not merge solely to mark this ticket complete: validate real reads and writes afterward and record the run URLs in Jira.
+The sync workflow is deployed on `main` through [PR #3](https://github.com/N11CE1/SydneyCommuteCostCalculator/pull/3). Authentication and Jira reads succeeded after the repository credentials were updated. Both original merge reruns intentionally reported `skipped`: neither PR had a completion marker, so KAN-4 and KAN-9 remained In Review.
+
+Dedicated lifecycle validation is tracked in [KAN-10](https://tomhickman.atlassian.net/browse/KAN-10) and [PR #4](https://github.com/N11CE1/SydneyCommuteCostCalculator/pull/4). Live status transitions and audit comments are verified below; merge completion still requires separate approval. Successful reads alone are not proof of writes.
 
 The automation uses GitHub Actions and Jira REST directly. GitHub for Atlassian is optional for richer development-panel linking; this workflow does not install it or replace its functionality. Existing editor-driven MCP access remains separate.
 
@@ -14,16 +16,18 @@ GitHub Settings → Secrets and variables → Actions:
 
 | Kind | Name | Value |
 |---|---|---|
-| Secret | `JIRA_API_TOKEN` | Expiring Jira-scoped Atlassian API token; never disclose in logs or source |
+| Secret | `JIRA_API_TOKEN` | Atlassian API token; current successful reads use an unscoped token. Never disclose in logs or source |
 | Secret | `JIRA_EMAIL` | Email for the account that created the token |
 | Variable | `JIRA_BASE_URL` | `https://tomhickman.atlassian.net` (site validation/documentation, not the scoped API endpoint) |
 | Variable | `JIRA_CLOUD_ID` | `9dc905e8-9878-4f15-a9bf-6510ec753f4b` |
 
-The scoped-token API endpoint is `https://api.atlassian.com/ex/jira/<cloud-id>/rest/api/3/...`, authenticated with the email/token pair. The token account needs Browse projects, Transition issues and Add comments permissions in KAN, plus visibility of the relevant issues. Token scopes cannot grant permissions the account lacks. A dedicated, project-limited account is preferable to a personal administrator token.
+The implementation's fixed API endpoint is `https://api.atlassian.com/ex/jira/<cloud-id>/rest/api/3/...`, authenticated with the email/token pair. The token account needs Browse projects, Transition issues and Add comments permissions in KAN, plus visibility of the relevant issues. Token scopes cannot grant permissions the account lacks. A dedicated, project-limited account is preferable to a personal administrator token.
 
 GitHub Actions must be enabled, including permission to use the pinned `actions/checkout` action. The workflow itself requests only read access to repository contents and PRs. No GitHub write token is needed for synchronization.
 
 ### Granular Jira scopes
+
+Least-privilege scoped-token authentication remains a hardening follow-up, not a verified configuration. Initial scoped-token runs returned HTTP 401; reads succeeded after both the email and token were replaced, so the failing credential was not isolated. Do not change endpoints or broaden permissions speculatively, and never log secret values.
 
 The documented dependencies for the issue read, transition read/write, and comment read/write endpoints are:
 
@@ -103,6 +107,24 @@ The separate `Automation tests` workflow executes proposed code with no Jira sec
 
 ## Validation
 
+### Live evidence — 2026-11-25
+
+All tests used the dedicated KAN-10 ticket and docs-only PR #4, not application tickets. No PR was merged.
+
+| Event | Observed result | Actions run |
+|---|---|---|
+| Draft opened | To Do → In Progress, PR-link comment 10007 added | [45599806766](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45599806766) |
+| Mark ready | In Progress → In Review, comment 10008 added | [45599975988](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45599975988) |
+| Convert to draft | In Review → In Progress, existing comment reused | [45600047369](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600047369) |
+| Mark ready again | In Progress → In Review | [45600119734 attempt 1](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600119734/attempts/1) |
+| Rerun same event | `unchanged`, still exactly two automation comments | [45600119734 attempt 2](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600119734/attempts/2) |
+| Close without merge | In Review → In Progress, never Done; read back from Jira | [45600383985](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600383985) |
+| Reopen ready PR | In Progress → In Review | [45600549407](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600549407) |
+
+GitHub's PR timeline recorded automatic `review_requested` for Copilot and `copilot_work_started`. Copilot submitted its completed review at 10:58:51 UTC on the initial docs commit, with no active issues. This verifies the automatic request and execution, not approval of subsequent commits.
+
+Merge → Done, automatic branch deletion after merge, and multiple-concurrent-PR live behavior remain unverified. Unit coverage is not a substitute for those live checks.
+
 ### Local tests (no credentials or live Jira writes)
 
 ```sh
@@ -127,6 +149,15 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 6. Record run URLs and observed Jira status/comments in KAN-9. Only then claim synchronization has been verified and resolve the automation ticket when its scope is complete.
 
 Adding a workflow does not guarantee its own initial merge produces a successful sync run. Reconcile KAN-9 manually if necessary after successful deployment/testing. This workflow does not add a required CI status check to branch protection automatically.
+
+## Repository review and cleanup settings
+
+Configured on 2026-11-25 with user authorization:
+
+- `delete_branch_on_merge: true` removes eligible remote head branches after merge, not local branches. Its actual post-merge behavior remains to be observed on the next approved merge.
+- Active repository ruleset **Automatic Copilot review** targets `~DEFAULT_BRANCH`, with `review_draft_pull_requests: true` and `review_on_push: false`. This requests review at PR creation, including drafts, without requesting another review on every push.
+- Copilot execution depends on the author's entitlement and available allowance. No paid-overage setting was changed. A configured rule is not evidence that a review completed.
+- Existing classic protection for `main` is retained: PR required including admins, conversations resolved, no force pushes or branch deletion, and no extra approving review required for the solo maintainer.
 
 ## Failure recovery
 
