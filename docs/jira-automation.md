@@ -6,7 +6,7 @@ Tracking: [KAN-9](https://tomhickman.atlassian.net/browse/KAN-9).
 
 The sync workflow is deployed on `main` through [PR #3](https://github.com/N11CE1/SydneyCommuteCostCalculator/pull/3). Authentication and Jira reads succeeded after the repository credentials were updated. Both original merge reruns intentionally reported `skipped`: neither PR had a completion marker, so KAN-4 and KAN-9 remained In Review.
 
-Dedicated lifecycle validation is tracked in [KAN-10](https://tomhickman.atlassian.net/browse/KAN-10). Successful reads are not proof of transitions or comment writes. Record each observed live path and run URL before claiming it works; merge completion still requires separate approval.
+Dedicated lifecycle validation is tracked in [KAN-10](https://tomhickman.atlassian.net/browse/KAN-10) and [PR #4](https://github.com/N11CE1/SydneyCommuteCostCalculator/pull/4). Live status transitions and audit comments are verified below; merge completion still requires separate approval. Successful reads alone are not proof of writes.
 
 The automation uses GitHub Actions and Jira REST directly. GitHub for Atlassian is optional for richer development-panel linking; this workflow does not install it or replace its functionality. Existing editor-driven MCP access remains separate.
 
@@ -106,6 +106,24 @@ After the final PR for a multi-PR ticket merges, that final PR must carry the co
 The separate `Automation tests` workflow executes proposed code with no Jira secrets, a read-only GitHub token and no persisted checkout credentials. Both workflows pin checkout to a verified commit. Review action updates like other dependencies.
 
 ## Validation
+
+### Live evidence — 2026-11-25
+
+All tests used the dedicated KAN-10 ticket and docs-only PR #4, not application tickets. No PR was merged.
+
+| Event | Observed result | Actions run |
+|---|---|---|
+| Draft opened | To Do → In Progress, PR-link comment 10007 added | [45599806766](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45599806766) |
+| Mark ready | In Progress → In Review, comment 10008 added | [45599975988](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45599975988) |
+| Convert to draft | In Review → In Progress, existing comment reused | [45600047369](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600047369) |
+| Mark ready again | In Progress → In Review | [45600119734 attempt 1](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600119734/attempts/1) |
+| Rerun same event | `unchanged`, still exactly two automation comments | [45600119734 attempt 2](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600119734/attempts/2) |
+| Close without merge | In Review → In Progress, never Done; read back from Jira | [45600383985](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600383985) |
+| Reopen ready PR | In Progress → In Review | [45600549407](https://github.com/N11CE1/SydneyCommuteCostCalculator/actions/runs/45600549407) |
+
+GitHub's PR timeline recorded automatic `review_requested` for Copilot and `copilot_work_started`. Copilot submitted its completed review at 10:58:51 UTC on the initial docs commit, with no active issues. This verifies the automatic request and execution, not approval of subsequent commits.
+
+Merge → Done, automatic branch deletion after merge, and multiple-concurrent-PR live behavior remain unverified. Unit coverage is not a substitute for those live checks.
 
 ### Local tests (no credentials or live Jira writes)
 
