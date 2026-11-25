@@ -1,0 +1,34 @@
+name: Automation tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/jira_pr_sync.py
+      - tests/test_jira_pr_sync.py
+      - .github/workflows/jira-pr-sync.yml
+      - .github/workflows/automation-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/jira_pr_sync.py
+      - tests/test_jira_pr_sync.py
+      - .github/workflows/jira-pr-sync.yml
+      - .github/workflows/automation-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # This job tests proposed code but has no Jira secrets or write token.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test automation without credentials or network calls
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s tests -v
