@@ -1,0 +1,50 @@
+name: Jira PR sync
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed, edited, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to preview (read-only; never changes Jira)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Jira is shared across PRs. Preserve queued events instead of replacing pending runs.
+concurrency:
+  group: jira-pr-sync
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  sync:
+    if: >-
+      github.repository == 'N11CE1/SydneyCommuteCostCalculator' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Never checkout PR-head code, even for same-repository PRs, with Jira secrets.
+      - name: Checkout trusted default-branch automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: true
+      - name: Reconcile Jira from current GitHub PR state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_CLOUD_ID: ${{ vars.JIRA_CLOUD_ID }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/jira_pr_sync.py
