@@ -7,7 +7,7 @@ Read `DesignDoc.md` before implementation. Start with the map-first, personal-us
 ## Jira and GitHub
 
 - Jira site: https://tomhickman.atlassian.net
-- Jira project: `KAN` (SydneyCommuteCostCalculator).
+- Jira project: `SCCC` (SydneyCommuteCostCalculator), project ID `10001`. Previous key `KAN` is retained for historical links; use `SCCC` for new work.
 - Repository: https://github.com/N11CE1/SydneyCommuteCostCalculator
 - Integration branch: `main`. Deliver implementation through pull requests, not direct pushes to `main`.
 - Credentials belong in secure local configuration, never source files, PR bodies, or tickets.
@@ -17,15 +17,23 @@ Read `DesignDoc.md` before implementation. Start with the map-first, personal-us
 1. Find the relevant existing ticket; do not create duplicates. Create a ticket with scope and acceptance criteria for new agreed work.
 2. Read its current requirements and dependencies. Keep work small; split a broad story into delivery tasks when useful.
 3. Obtain explicit user authorization before creating branches or making commits. Inspect the working tree and preserve existing user changes.
-4. For authorized new work, branch from current `main` and include the ticket key, e.g. `KAN-6/map-prototype`. Do not reuse a merged branch for new work.
+4. For authorized new work, branch from current `main` and include the ticket key, e.g. `SCCC-6/map-prototype`. Do not reuse a merged branch for new work.
 5. Move the ticket from **To Do** to **In Progress** when implementation starts. Query the issue's available transitions rather than guessing transition IDs.
+
+### Ticket assignment
+
+- New SCCC tickets default to Tom Hickman through Jira's native project default assignee (project lead). For editor/MCP creation, omit `assignee` to use that default, unless the user explicitly requests someone else.
+- Preserve explicitly chosen assignees. Do not bulk-reassign existing tickets or change site-wide assignment settings.
+- Read back the created ticket's assignee. If the default fails, report it rather than claiming success or silently assigning it afterward as proof of automation.
+- An omitted assignee is not the same as an explicitly unassigned value. The latter and other creation channels must not be assumed to follow the default.
+- Verified on 2026-11-26: SCCC-12 was created via MCP without an assignee argument and independently read back as assigned to Tom. SCCC-11 tracks this convention; see `docs/jira-automation.md` for limits.
 
 ### During implementation and review
 
 - Keep changes scoped to the ticket and record material decisions or blockers in Jira.
 - Keep generated caches outside the worktree where practical. Never commit `.cache/`, build outputs, dependencies, or secrets. Do not delete unrelated files to clean up generated output.
 - Run relevant checks and report actual results. A test file existing is not evidence that a test run passed.
-- When authorized to commit/push, use a ticket-prefixed PR title, e.g. `KAN-6: Add map-first rental prototype`.
+- When authorized to commit/push, use a ticket-prefixed PR title, e.g. `SCCC-6: Add map-first rental prototype`.
 - Include the Jira URL, scope, acceptance-criteria coverage, actual validation results, and remaining limitations in the PR body.
 - Add the PR URL to Jira and Jira URL to the PR. A manual remote link is useful even when automatic development-panel linking is not configured.
 - Draft PRs normally remain **In Progress**. Move to **In Review** when the PR is ready for review, not simply because a draft exists.
@@ -44,10 +52,10 @@ Read `DesignDoc.md` before implementation. Start with the map-first, personal-us
 
 Authenticated GitHub CLI and Atlassian MCP allow editor-driven ticket creation, linking, comments, and workflow transitions. They do **not** by themselves configure automatic event synchronization.
 
-GitHub Actions PR-event synchronization is deployed on `main`; see `docs/jira-automation.md` for security, setup, and validation evidence. Read authentication is verified; dedicated live lifecycle validation is tracked in KAN-10. A green run that reports `skipped` is not proof of a status write.
+GitHub Actions PR-event synchronization is deployed on `main`; see `docs/jira-automation.md` for security, setup, and validation evidence. The original KAN lifecycle, including completion reconciliation after merge, was verified under SCCC-10 (then KAN-10). SCCC-key migration is tracked in SCCC-12 and requires deployment and live validation after merge. A green run that reports `skipped` is not proof of a status write.
 
-- Use the exact `KAN-N:` title prefix. Draft PRs map to In Progress; ready PRs map to In Review.
-- Completion requires a verified merge into `main`, the full ticket scope delivered, and a matching standalone `Completes-Jira: KAN-N` line in the PR body.
+- Use the exact `SCCC-N:` title prefix for new work. The migrated script also accepts retained `KAN-N:` prefixes for historical PRs, groups both aliases as the same ticket, and recognizes old audit markers to prevent duplicate comments. Draft PRs map to In Progress; ready PRs map to In Review.
+- Completion requires a verified merge into `main`, the full ticket scope delivered, and a matching standalone `Completes-Jira: SCCC-N` line in the PR body. For historical `KAN-N:` titles the marker must retain that exact spelling; mixed-prefix completion markers are rejected even for the same ticket number.
 - Exclude drafts and closed-unmerged PRs from completion. Handle tickets with multiple PRs explicitly rather than closing on the first merge.
 - Record actual workflow runs and Jira status/comments before claiming a lifecycle path is verified.
 - GitHub for Atlassian development-panel linking is optional and remains unverified; it is separate from this REST-based synchronization.

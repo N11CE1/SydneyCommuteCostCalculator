@@ -13,23 +13,31 @@ from pathlib import Path
 
 REPOSITORY = "N11CE1/SydneyCommuteCostCalculator"
 JIRA_SITE = "https://tomhickman.atlassian.net"
-PROJECT = "KAN"
+PROJECT = "SCCC"
+PROJECT_ID = "10001"
+LEGACY_PROJECT = "KAN"
 BASE_BRANCH = "main"
 EDITABLE_STATUSES = {"To Do", "In Progress", "In Review"}
 EVENT_ACTIONS = {
     "opened", "reopened", "ready_for_review", "converted_to_draft",
     "closed", "edited", "synchronize",
 }
-KEY_PATTERN = r"KAN-[1-9][0-9]*"
+KEY_PATTERN = rf"(?:{PROJECT}|{LEGACY_PROJECT})-[1-9][0-9]*"
 
 
 class SyncError(Exception):
     pass
 
 
-def ticket_key(pr):
+def title_ticket_key(pr):
     match = re.match(rf"^({KEY_PATTERN}):\s+\S", pr.get("title", ""))
     return match.group(1) if match else None
+
+
+def ticket_key(pr):
+    key = title_ticket_key(pr)
+    # Jira retained KAN as an alias; use one identity for API calls and competing PRs.
+    return f"{PROJECT}-{key.split('-', 1)[1]}" if key else None
 
 
 def trusted_pr(pr):
@@ -80,7 +88,7 @@ def desired_status(pr, others):
     if active:
         return "In Review" if any(not item.get("draft", True) for item in active) else "In Progress"
     if pr.get("merged") and pr.get("state") == "closed":
-        return "Done" if completes_ticket(pr, key) else None
+        return "Done" if completes_ticket(pr, title_ticket_key(pr)) else None
     if pr.get("state") == "closed":
         return "In Progress"
     return None
@@ -90,7 +98,8 @@ def eligible_target(issue, target, may_start=True):
     fields = issue.get("fields", {})
     status = fields.get("status", {})
     current = status.get("name")
-    if fields.get("project", {}).get("key") != PROJECT:
+    project = fields.get("project", {})
+    if project.get("id") != PROJECT_ID or project.get("key") != PROJECT:
         raise SyncError("Jira returned an issue outside the allowed project.")
     if status.get("statusCategory", {}).get("key") == "done":
         # Allow recovery of a failed completion comment, never reopen a completed issue.
@@ -199,12 +208,13 @@ def list_open_prs(github):
         page += 1
 
 
-def comments_contain(jira, key, marker):
+def comments_contain(jira, key, marker, *aliases):
+    markers = (marker, *aliases)
     start = 0
     while True:
         page = jira.request("GET", f"/rest/api/3/issue/{key}/comment?startAt={start}&maxResults=100")
         items = page.get("comments", [])
-        if any(contains_text(item.get("body"), marker) for item in items):
+        if any(contains_text(item.get("body"), text) for item in items for text in markers):
             return True
         start += len(items)
         if start >= page["total"]:
@@ -231,7 +241,7 @@ def sync(github, jira, number, dry_run=False):
     pr = github.request("GET", pr_path)
     key = ticket_key(pr)
     if not trusted_pr(pr) or not key:
-        return {"result": "skipped", "reason": "PR must be same-repository, target main, and start with KAN-N: in its title."}
+        return {"result": "skipped", "reason": "PR must be same-repository, target main, and start with SCCC-N: (or retained KAN-N:) in its title."}
     others = list_open_prs(github)
     desired = desired_status(pr, others)
     issue_path = f"/rest/api/3/issue/{key}"
@@ -242,7 +252,10 @@ def sync(github, jira, number, dry_run=False):
     # Dry-run also checks read scopes even if no transition is currently needed.
     transitions = jira.request("GET", issue_path + "/transitions?expand=transitions.fields")["transitions"]
     marker = comment_marker(number, key, target) if target else "[jira-pr-sync:validation]"
-    already_commented = comments_contain(jira, key, marker)
+    # Historical comments keep their original key, even if the PR is retitled.
+    legacy_key = f"{LEGACY_PROJECT}-{key.split('-', 1)[1]}"
+    aliases = (comment_marker(number, legacy_key, target),) if target else ()
+    already_commented = comments_contain(jira, key, marker, *aliases)
     result = {"ticket": key, "current": current, "target": target, "dry_run": dry_run}
     if not target:
         return dict(result, result="skipped", reason="No eligible transition or explicit completion marker; completed/custom states are preserved.")
