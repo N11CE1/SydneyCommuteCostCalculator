@@ -9,6 +9,7 @@ from scripts import jira_pr_sync as sync
 
 
 def pr(number=9, **overrides):
+    # Keep the original lifecycle suite as regression coverage for retained KAN PRs.
     result = {
         "number": number,
         "title": "KAN-9: Automate Jira status",
@@ -24,9 +25,9 @@ def pr(number=9, **overrides):
     return result
 
 
-def issue(status="In Progress", category="indeterminate", project="KAN"):
+def issue(status="In Progress", category="indeterminate", project="SCCC", project_id="10001"):
     return {"fields": {
-        "project": {"key": project},
+        "project": {"id": project_id, "key": project},
         "status": {"name": status, "statusCategory": {"key": category}},
     }}
 
@@ -295,6 +296,131 @@ class ReconciliationTests(unittest.TestCase):
         jira.request.side_effect = [{"comments": [], "total": 1}]
         with self.assertRaises(sync.SyncError):
             sync.comments_contain(jira, "KAN-9", "marker")
+
+
+class ProjectKeyMigrationTests(unittest.TestCase):
+    def test_both_title_prefixes_resolve_to_canonical_ticket(self):
+        for prefix in ["SCCC", "KAN"]:
+            candidate = pr(title=f"{prefix}-9: Title")
+            self.assertEqual(sync.title_ticket_key(candidate), f"{prefix}-9")
+            self.assertEqual(sync.ticket_key(candidate), "SCCC-9")
+        for title in [
+            "SCCC-0: Title", "SCCC-09: Title", "SCCC-9:x", "SCCC-9:",
+            "Fix SCCC-9: Title", "sccc-9: Title", "OTHER-9: Title",
+        ]:
+            with self.subTest(title=title):
+                self.assertIsNone(sync.ticket_key(pr(title=title)))
+
+    def test_canonical_lifecycle(self):
+        cases = [
+            ({"draft": True}, "To Do", "In Progress"),
+            ({}, "In Progress", "In Review"),
+            ({"draft": True}, "In Review", "In Progress"),
+            ({"state": "closed"}, "In Review", "In Progress"),
+            ({"state": "closed", "merged": True}, "In Review", None),
+            ({"state": "closed", "merged": True, "body": "Completes-Jira: SCCC-9"}, "In Review", "Done"),
+        ]
+        for overrides, current, target in cases:
+            with self.subTest(overrides=overrides):
+                github = FakeGitHub(pr(title="SCCC-9: Title", **overrides))
+                jira = FakeJira(issue(current))
+                result = sync.sync(github, jira, 9)
+                self.assertEqual(result["ticket"], "SCCC-9")
+                self.assertEqual(result["target"], target)
+                if target:
+                    self.assertEqual(jira.issue["fields"]["status"]["name"], target)
+
+    def test_api_paths_and_new_comments_are_canonical_for_both_prefixes(self):
+        for prefix in ["SCCC", "KAN"]:
+            with self.subTest(prefix=prefix):
+                github, jira = FakeGitHub(pr(title=f"{prefix}-9: Title")), FakeJira()
+                result = sync.sync(github, jira, 9)
+                self.assertEqual(result["ticket"], "SCCC-9")
+                for path in jira.reads + [path for path, _ in jira.writes]:
+                    self.assertTrue(path.startswith("/rest/api/3/issue/SCCC-9"))
+                self.assertTrue(sync.contains_text(jira.comments, sync.comment_marker(9, "SCCC-9", "In Review")))
+                jira.writes.clear()
+                self.assertEqual(sync.sync(github, jira, 9)["result"], "unchanged")
+                self.assertEqual(jira.writes, [])
+
+    def test_completion_requires_exact_title_spelling_and_one_marker(self):
+        for prefix, other in [("SCCC", "KAN"), ("KAN", "SCCC")]:
+            title = f"{prefix}-9: Title"
+            valid = f"Completes-Jira: {prefix}-9"
+            merged = pr(title=title, state="closed", merged=True, body=valid)
+            self.assertEqual(sync.desired_status(merged, []), "Done")
+            for body in [
+                f"Completes-Jira: {other}-9", f"Completes-Jira: {prefix}-10",
+                valid + "\n" + f"Completes-Jira: {other}-9", valid + "\n" + valid,
+                valid + " ", "> " + valid, "```text\n" + valid + "\n```",
+                "~~~\n" + valid + "\n~~~", " " + valid, valid + " extra",
+            ]:
+                with self.subTest(title=title, body=body):
+                    github = FakeGitHub({**merged, "body": body})
+                    jira = FakeJira(issue("In Review"))
+                    self.assertIsNone(sync.sync(github, jira, 9)["target"])
+                    self.assertEqual(jira.writes, [])
+
+    def test_other_pr_alias_blocks_completion_and_status_regression(self):
+        for prefix, other in [("SCCC", "KAN"), ("KAN", "SCCC")]:
+            current = pr(title=f"{prefix}-9: Title", state="closed", merged=True,
+                         body=f"Completes-Jira: {prefix}-9")
+            for draft, target in [(False, "In Review"), (True, "In Progress")]:
+                active = pr(10, title=f"{other}-9: Same ticket", draft=draft)
+                self.assertEqual(sync.desired_status(current, [active]), target)
+                self.assertEqual(sync.active_snapshot([active], "SCCC-9"), [(10, draft, active["updated_at"])])
+            self.assertEqual(sync.desired_status(
+                pr(title=f"{prefix}-9: Title", draft=True),
+                [pr(10, title=f"{other}-9: Same ticket")],
+            ), "In Review")
+
+    def test_alias_pr_appearing_during_recheck_fails_closed(self):
+        github, jira = FakeGitHub(pr(title="SCCC-9: Title")), FakeJira()
+        github.change_others_on_recheck = True  # Adds a legacy KAN-9 PR.
+        with self.assertRaisesRegex(sync.SyncError, "PR state changed"):
+            sync.sync(github, jira, 9)
+        self.assertEqual(jira.writes, [])
+
+    def test_historical_comments_survive_alias_title_changes_and_reruns(self):
+        for stored_prefix in ["KAN", "SCCC"]:
+            for title_prefix in ["KAN", "SCCC"]:
+                for target in ["In Progress", "In Review", "Done"]:
+                    with self.subTest(stored=stored_prefix, title=title_prefix, target=target):
+                        current = pr(title=f"{title_prefix}-9: Title", draft=target == "In Progress")
+                        if target == "Done":
+                            current.update(state="closed", merged=True, body=f"Completes-Jira: {title_prefix}-9")
+                        jira = FakeJira(issue(target, "done" if target == "Done" else "indeterminate"))
+                        marker = sync.comment_marker(9, f"{stored_prefix}-9", target)
+                        jira.comments = [{"body": {"type": "text", "text": marker}}]
+                        self.assertEqual(sync.sync(FakeGitHub(current), jira, 9)["result"], "unchanged")
+                        self.assertEqual(jira.writes, [])
+
+    def test_unrelated_audit_markers_do_not_suppress_comment(self):
+        for number, key, target in [(10, "KAN-9", "In Review"), (9, "KAN-10", "In Review"), (9, "KAN-9", "Done")]:
+            jira = FakeJira(issue("In Review"))
+            jira.comments = [{"body": sync.comment_marker(number, key, target)}]
+            self.assertEqual(sync.sync(FakeGitHub(pr(title="SCCC-9: Title")), jira, 9)["result"], "updated")
+            self.assertEqual(len(jira.writes), 1)
+            self.assertTrue(jira.writes[0][0].endswith("/comment"))
+
+    def test_stable_project_identity_and_canonical_key_are_required(self):
+        for project, project_id in [("OTHER", "10001"), ("KAN", "10001"), ("SCCC", "99999"), ("SCCC", None)]:
+            with self.subTest(project=project, project_id=project_id):
+                jira = FakeJira(issue(project=project, project_id=project_id))
+                with self.assertRaisesRegex(sync.SyncError, "outside the allowed project"):
+                    sync.sync(FakeGitHub(pr(title="SCCC-9: Title")), jira, 9)
+                self.assertEqual(jira.writes, [])
+
+    def test_canonical_prefix_does_not_bypass_trust_or_completed_status(self):
+        for current in [pr(title="SCCC-9: Title", head={"repo": None}),
+                        pr(title="SCCC-9: Title", base={"ref": "develop", "repo": {"full_name": sync.REPOSITORY}})]:
+            jira = FakeJira()
+            self.assertEqual(sync.sync(FakeGitHub(current), jira, 9)["result"], "skipped")
+            self.assertEqual(jira.reads + jira.writes, [])
+        for status, category in [("Done", "done"), ("Blocked", "indeterminate")]:
+            jira = FakeJira(issue(status, category))
+            self.assertEqual(sync.sync(FakeGitHub(pr(title="SCCC-9: Title")), jira, 9)["result"], "skipped")
+            self.assertEqual(jira.writes, [])
 
 
 class ConfigurationAndHTTPTests(unittest.TestCase):
