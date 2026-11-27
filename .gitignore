@@ -1,2 +1,11 @@
 # Generated local caches
 /.cache/
+
+# Frontend dependencies, builds, local credentials and test artifacts
+/web/node_modules/
+/web/dist/
+/web/.env*
+!/web/.env.example
+/web/test-results/
+/web/playwright-report/
+*.tsbuildinfo
