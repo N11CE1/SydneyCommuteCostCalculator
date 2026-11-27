@@ -113,7 +113,10 @@
         entry = { marker, button };
         markers.set(place.id, entry);
       }
-      entry.button.className = `map-pin ${work ? 'work-pin' : 'rental-pin'} ${!work && place.id === selectedId ? 'selected' : ''}`;
+      entry.button.classList.add('map-pin');
+      entry.button.classList.toggle('work-pin', work);
+      entry.button.classList.toggle('rental-pin', !work);
+      entry.button.classList.toggle('selected', !work && place.id === selectedId);
       entry.button.textContent = work
         ? 'W'
         : String(candidates.findIndex((item) => item.id === place.id) + 1);
