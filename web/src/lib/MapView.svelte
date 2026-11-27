@@ -133,15 +133,22 @@
     const instance = map;
     const selected = candidates.find((item) => item.id === selectedId);
     if (instance && selected) {
-      const { clientWidth: width, clientHeight: height } = instance.getContainer();
-      // Keep the selected pin clear of the details panel on both layouts.
-      const offset: [number, number] =
-        width < 640 ? [0, -Math.min(90, height / 6)] : [-Math.min(200, width / 5), 0];
-      instance.easeTo({
-        center: [selected.coordinates.longitude, selected.coordinates.latitude],
-        offset,
-        duration: 350,
-      });
+      const positionSelection = () => {
+        const { clientWidth: width, clientHeight: height } = instance.getContainer();
+        // Keep the selected pin clear of the details panel on both layouts.
+        const offset: [number, number] =
+          width < 640 ? [0, -Math.min(90, height / 6)] : [-Math.min(200, width / 5), 0];
+        instance.easeTo({
+          center: [selected.coordinates.longitude, selected.coordinates.latitude],
+          offset,
+          duration: 350,
+        });
+      };
+      positionSelection();
+      instance.on('resize', positionSelection);
+      return () => {
+        instance.off('resize', positionSelection);
+      };
     }
   });
 </script>
