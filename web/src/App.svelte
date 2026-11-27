@@ -51,7 +51,10 @@
 
   function commit(next: Scenario) {
     scenario = validateScenario(next);
-    if (!storageBlocked) storageWarning = saveScenario(scenario, () => localStorage);
+    if (!storageBlocked) {
+      storageWarning = saveScenario(scenario, () => localStorage);
+      storageBlocked = !!storageWarning;
+    }
   }
 
   function openEditor(kind: 'rental' | 'work', place?: Place) {
